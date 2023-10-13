@@ -315,6 +315,17 @@ class Dataset(object):
         self.image_from_source_map = {"{}.{}".format(info['source'], info['id']): id
                                       for info, id in zip(self.image_info, self.image_ids)}
 
+        # image name to image id
+        self.image_name_to_id = {
+            "{}".format(info['id']): id
+            for info, id in zip(self.image_info, self.image_ids)
+        }
+
+        self.image_id_to_name = {
+            id: "{}".format(info['id'])
+            for info, id in zip(self.image_info, self.image_ids)
+        }
+
         # Map sources to class_ids they support
         self.sources = list(set([i['source'] for i in self.class_info]))
         self.source_class_ids = {}
@@ -529,7 +540,7 @@ def minimize_mask(bbox, mask, mini_shape):
         if m.size == 0:
             raise Exception("Invalid bounding box with area of zero")
         # Resize with bilinear interpolation
-        m = resize(m, mini_shape)
+        m = resize(m, mini_shape, order=0)
         mini_mask[:, :, i] = np.around(m).astype(np.bool)
     return mini_mask
 
