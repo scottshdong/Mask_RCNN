@@ -13,15 +13,6 @@ Usage: import the module (see Jupyter notebooks for examples), or run from
 
     # Train a new model starting from ImageNet weights
     python3 rebar.py train --dataset=/path/to/balloon/dataset --weights=imagenet
-
-    # Apply color splash to an image
-    python3 rebar.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
-
-    # Apply color splash to video using the last weights you trained
-    python3 rebar.py splash --weights=last --video=<URL or path to file>
-
-    # Generate submission file
-    python3 rebar.py detect --dataset=/path/to/dataset --subset=train --weights=<last or /path/to/weights.h5>
 """
 
 # Set matplotlib backend
@@ -36,7 +27,6 @@ if __name__ == '__main__':
 
 import os
 import sys
-import json
 import datetime
 import numpy as np
 import skimage.io
@@ -88,44 +78,39 @@ VAL_IMAGE_IDS = [
     "newset4-2_00013",
     "newset4-2_00014",
     "newset4-2_00015",
-    "newset4-2_00016",
-    "newset4-2_00017",
-    "newset4-2_00018",
-    "newset4-2_00019",
-    "newset4-2_00020",
-    "newset4-2_00021",
-    "newset4-2_00022",
-    "newset4-2_00023",
-    "newset4-2_00024",
-    "newset4-2_00025",
-    "newset4-2_00026",
-    "newset4-2_00027",
-    "newset4-2_00028",
-    "newset4-2_00029",
-    "newset4-2_00030",
-    "newset4-2_00031",
-    "newset4-2_00032",
-    "newset4-2_00033",
-    "newset4-2_00034",
-    "newset4-2_00035",
-    "newset4-2_00036",
-    "newset4-2_00037",
-    "newset4-2_00038",
-    "newset4-2_00039",
-    "newset4-2_00040",
-    "newset4-2_00041",
-    "newset4-2_00042",
-    "newset4-2_00043",
-    "newset4-2_00044",
-    "newset4-2_00045",
-    "newset4-2_00046",
-    "newset4-2_00047",
-    "newset4-2_00048",
-    "newset4-2_00049",
-    "newset4-2_00050",
+    "newset1_00001",
+    "newset1_00002",
+    "newset1_00003",
+    "newset1_00004",
+    "newset1_00005",
+    "newset1_00006",
+    "newset1_00007",
+    "newset1_00008",
+    "newset1_00009",
+    "newset1_00010",
+    "newset1_00011",
+    "newset1_00012",
+    "newset1_00013",
+    "newset1_00014",
+    "newset1_00015",
+    "bar_00001",
+    "bar_00002",
+    "bar_00003",
+    "bar_00004",
+    "bar_00005",
+    "bar_00006",
+    "bar_00007",
+    "bar_00008",
+    "bar_00009",
+    "bar_00010",
+    "bar_00011",
+    "bar_00012",
+    "bar_00013",
+    "bar_00014",
+    "bar_00015",
 ]
 
-TRAIN_PORT = 0.5
+TRAIN_PORT = 0.8
 
 ############################################################
 #  Configurations
@@ -150,7 +135,6 @@ class RebarConfig(Config):
 
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0
-
     DETECTION_MAX_INSTANCES = 50
 
 
@@ -163,6 +147,8 @@ class RebarInferenceConfig(RebarConfig):
     # Non-max suppression threshold to filter RPN proposals.
     # You can increase this during training to generate more propsals.
     RPN_NMS_THRESHOLD = 0.7
+    # Skip detections with < 90% confidence
+    DETECTION_MIN_CONFIDENCE = 0.6
 
 
 ############################################################
@@ -191,8 +177,8 @@ class RebarDataset(utils.Dataset):
             image_ids = []
             for root, dirs, files in os.walk(image_dir):
                 for file in files:
-                    if file.endswith('.png') and file.startswith('bar') \
-                        or file.endswith('.jpg') and file.startswith('newset'):
+                    if file.startswith('bar') \
+                        or file.startswith('newset'):
                             name, ext = os.path.splitext(file)
                             image_ids.append(name)
 
@@ -215,9 +201,9 @@ class RebarDataset(utils.Dataset):
                 newset_len = len(newset_image_ids)
                 bar_len = len(bar_image_ids)
 
-                image_ids = bar_image_ids[0:bar_len*TRAIN_PORT].extend(
-                    newset_image_ids[0:newset_len*TRAIN_PORT]
-                )
+                image_ids = []
+                image_ids.extend(bar_image_ids[0:int(bar_len*TRAIN_PORT)])
+                image_ids.extend(newset_image_ids[0:int(newset_len*TRAIN_PORT)])
 
         # detect
         train_image_ids = set()
@@ -308,20 +294,33 @@ def train(model, dataset_dir, subset):
     # ])
 
     # *** This training schedule is an example. Update to your needs ***
+    augmentation = iaa.Fliplr(0.5)
 
+    # Training - Stage 1
     print("Train network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=20,
-                augmentation=None,
+                epochs=15,
+                augmentation=augmentation,
                 layers='heads')
 
-    print("Train all layers")
+    # Training - Stage 2
+    # Finetune layers from ResNet stage 4 and up
+    print("Fine tune Resnet stage 4 and up")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=30,
-                augmentation=None,
-                layers='all')
+                epochs=35,
+                layers='4+',
+                augmentation=augmentation)
+
+    # Training - Stage 3
+    # Fine tune all layers
+    print("Fine tune all layers")
+    model.train(dataset_train, dataset_val,
+                learning_rate=config.LEARNING_RATE / 10,
+                epochs=60,
+                layers='all',
+                augmentation=augmentation)
 
 ############################################################
 #  Detection
@@ -391,21 +390,14 @@ if __name__ == '__main__':
     parser.add_argument('--image', required=False,
                         metavar="path or URL to image",
                         help='Image to apply the color splash effect on')
-    parser.add_argument('--subset', required=False,
-                        metavar="Dataset sub-directory",
-                        help="Subset of dataset to run prediction on")
     args = parser.parse_args()
 
     # Validate arguments
     if args.command == "train":
         assert args.dataset, "Argument --dataset is required for training"
-    elif args.command == "detect":
-        assert args.subset, "Provide --subset to run prediction on"
 
     print("Weights: ", args.weights)
     print("Dataset: ", args.dataset)
-    if args.subset:
-        print("Subset: ", args.subset)
     print("Logs: ", args.logs)
 
     # Configurations
@@ -451,7 +443,7 @@ if __name__ == '__main__':
 
     # Train or evaluate
     if args.command == "train":
-        train(model, args.dataset, args.subset)
+        train(model, args.dataset, 'train')
     elif args.command == "detect":
         detect_and_color_splash(model, image_path=args.image)
     else:
